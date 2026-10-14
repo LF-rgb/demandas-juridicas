@@ -33,3 +33,6 @@ export const BIZ_END = num("BUSINESS_HOUR_END", 18);
 export const TZ = process.env.TIMEZONE ?? "America/Sao_Paulo";
 
 export const SELF = (process.env.SMTP_USER ?? process.env.ZIMBRA_USER ?? "").toLowerCase();
+
+// Empresa-cliente do ComplyFlow dona desta caixa de e-mail (profiles.empresa_cliente_id).
+export const EMPRESA = env("EMPRESA_CLIENTE_ID");

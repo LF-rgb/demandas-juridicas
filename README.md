@@ -54,3 +54,13 @@ Rode `supabase/002_respostas_automaticas.sql` e `supabase/003_solicitacao_docume
 - Envio do rascunho aprovado via SMTP do Zimbra.
 - Alertas diários de prazos por e-mail ou Teams.
 - Leitura de anexos (PDF) na triagem.
+
+---
+
+## Versão integrada ao ComplyFlow (atual)
+
+O painel agora vive no ComplyFlow (`/demandas`, área "Demandas Jurídicas", mesmo login e permissões). Este repositório mantém **apenas o worker**, que grava nas tabelas `dj_*` do Supabase do ComplyFlow.
+
+- `worker/.env`: use `SUPABASE_URL` e a **service_role** do projeto do ComplyFlow e defina `EMPRESA_CLIENTE_ID`.
+- Responsáveis = usuários do ComplyFlow (administrador, ou analista com a área "Demandas Jurídicas"); especialidades em `/demandas/configuracao > Equipe`.
+- `web/` e `supabase/*.sql` desta pasta pertencem à versão standalone e não são mais necessários.

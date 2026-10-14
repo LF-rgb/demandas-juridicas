@@ -1,5 +1,5 @@
 import type { ParsedMail } from "mailparser";
-import { supabase, MIN_CONF, MAX_PER_SENDER_DAY, BIZ_START, BIZ_END, TZ, SELF } from "./config.js";
+import { supabase, EMPRESA, MIN_CONF, MAX_PER_SENDER_DAY, BIZ_START, BIZ_END, TZ, SELF } from "./config.js";
 
 export const limpa = (s: string) => s.replace(/[\r\n]+/g, " ").trim();
 export const reSubject = (s: string) => (/^re:/i.test(s) ? s : `Re: ${s}`);
@@ -42,8 +42,9 @@ export function dentroDoHorario(agora = new Date()): boolean {
 export async function limiteExcedido(addr: string): Promise<boolean> {
   const desde = new Date(Date.now() - 864e5).toISOString();
   const { count } = await supabase
-    .from("demandas")
+    .from("dj_demandas")
     .select("id", { count: "exact", head: true })
+    .eq("empresa_cliente_id", EMPRESA)
     .eq("remetente_email", addr)
     .eq("resposta_automatica_enviada", true)
     .gte("resposta_enviada_em", desde);

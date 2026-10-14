@@ -1,6 +1,6 @@
 import { ImapFlow } from "imapflow";
 import { simpleParser, type ParsedMail } from "mailparser";
-import { env, supabase, MODEL, MAX_BODY, PROCESSED, AUTO_ON, DOCS_ON, MIN_CONF } from "./config.js";
+import { env, supabase, EMPRESA, MODEL, MAX_BODY, PROCESSED, AUTO_ON, DOCS_ON, MIN_CONF } from "./config.js";
 import { triar, type Membro, type Modelo, type ItemChecklist } from "./triage.js";
 import { enviarResposta } from "./mailer.js";
 import {
@@ -11,21 +11,32 @@ import { rotinaDocumentos } from "./docs.js";
 import { SELF } from "./config.js";
 
 async function carregarMembros(): Promise<Membro[]> {
-  const { data, error } = await supabase.from("membros").select("id,nome,email,areas").eq("ativo", true);
+  // Pessoas do ComplyFlow com acesso a Demandas Juridicas (administrador ou concessao explicita).
+  const { data: perfis, error } = await supabase
+    .from("profiles").select("id,nome,email,role,areas_permitidas")
+    .eq("empresa_cliente_id", EMPRESA).eq("ativo", true);
   if (error) throw error;
-  return data ?? [];
+  const { data: esp, error: e2 } = await supabase
+    .from("dj_especialidades").select("profile_id,areas").eq("empresa_cliente_id", EMPRESA);
+  if (e2) throw e2;
+  const areas = new Map((esp ?? []).map((x) => [x.profile_id as string, x.areas as string[]]));
+  return (perfis ?? [])
+    .filter((p) => (p.role === "administrador" || p.role === "analista") &&
+      (p.role === "administrador" || (p.areas_permitidas ?? []).includes("demandas_juridicas")))
+    .map((p) => ({ id: p.id, nome: p.nome, email: p.email ?? "", areas: areas.get(p.id) ?? [] }))
+    .filter((p) => p.email);
 }
 async function carregarModelos(): Promise<Modelo[]> {
   const { data, error } = await supabase
-    .from("respostas_modelo")
+    .from("dj_respostas_modelo")
     .select("id,titulo,quando_usar,corpo,auto_enviar,encerra_demanda")
-    .eq("ativo", true).eq("finalidade", "resposta");
+    .eq("empresa_cliente_id", EMPRESA).eq("ativo", true).eq("finalidade", "resposta");
   if (error) throw error;
   return data ?? [];
 }
 async function carregarChecklist(): Promise<ItemChecklist[]> {
   const { data, error } = await supabase
-    .from("checklist_documentos").select("id,area,tipo,documento").eq("ativo", true);
+    .from("dj_checklist_documentos").select("id,area,tipo,documento").eq("empresa_cliente_id", EMPRESA).eq("ativo", true);
   if (error) throw error;
   return data ?? [];
 }
@@ -46,7 +57,7 @@ async function acharConversa(p: ParsedMail) {
   ].filter((x): x is string => !!x);
   if (!refs.length) return null;
   for (const col of ["message_id", "docs_solicitacao_message_id"]) {
-    const { data } = await supabase.from("demandas").select("id,docs_status").in(col, refs).limit(1);
+    const { data } = await supabase.from("dj_demandas").select("id,docs_status").eq("empresa_cliente_id", EMPRESA).in(col, refs).limit(1);
     if (data?.[0]) return data[0];
   }
   return null;
@@ -55,7 +66,8 @@ async function acharConversa(p: ParsedMail) {
 // A resposta NAO passa pela IA: so e registrada no historico para revisao humana.
 async function registrarRetorno(pai: { id: string; docs_status: string | null }, p: ParsedMail) {
   const anexos = (p.attachments ?? []).map((a) => a.filename).filter(Boolean);
-  await supabase.from("historico").insert({
+  await supabase.from("dj_historico").insert({
+    empresa_cliente_id: EMPRESA,
     demanda_id: pai.id,
     evento: "resposta_recebida",
     detalhe: `De: ${p.from?.text ?? ""}\nAnexos: ${anexos.join(", ") || "nenhum"}\n${(p.text ?? "").slice(0, 1500)}`,
@@ -65,7 +77,7 @@ async function registrarRetorno(pai: { id: string; docs_status: string | null },
     patch.docs_status = "recebido"; // um humano confere se o conteudo dos anexos esta correto
     patch.status = "em_analise";
   }
-  await supabase.from("demandas").update(patch).eq("id", pai.id);
+  await supabase.from("dj_demandas").update(patch).eq("id", pai.id);
 }
 
 async function ciclo() {
@@ -96,7 +108,7 @@ async function ciclo() {
         const addr = emailDoRemetente(parsed);
 
         const { data: existe } = await supabase
-          .from("demandas").select("id").eq("message_id", messageId).maybeSingle();
+          .from("dj_demandas").select("id").eq("empresa_cliente_id", EMPRESA).eq("message_id", messageId).maybeSingle();
         if (existe) { await concluir(client, uid); continue; }
 
         const pai = await acharConversa(parsed);
@@ -121,7 +133,8 @@ async function ciclo() {
           DOCS_ON && faltantes.length > 0 && !t.alerta_injecao && t.confianca >= MIN_CONF &&
           !!addr && addr !== SELF && !ehAutomatico(parsed, addr);
 
-        const { data: nova, error } = await supabase.from("demandas").insert({
+        const { data: nova, error } = await supabase.from("dj_demandas").insert({
+          empresa_cliente_id: EMPRESA,
           message_id: messageId,
           remetente, remetente_email: addr, assunto, corpo,
           recebido_em: recebidoEm.toISOString(),
@@ -140,7 +153,8 @@ async function ciclo() {
         }).select("id").single();
         if (error) throw error;
 
-        await supabase.from("historico").insert({
+        await supabase.from("dj_historico").insert({
+    empresa_cliente_id: EMPRESA,
           demanda_id: nova.id,
           evento: "triagem_ia",
           detalhe: t.alerta_injecao
@@ -148,7 +162,8 @@ async function ciclo() {
             : `Triagem automatica (confianca ${t.confianca}). IA analisou texto e nomes dos anexos, nao o conteudo.`,
         });
         if (podePedirDocs) {
-          await supabase.from("historico").insert({
+          await supabase.from("dj_historico").insert({
+    empresa_cliente_id: EMPRESA,
             demanda_id: nova.id, evento: "documentos_identificados",
             detalhe: `Pedido sera enviado em horario comercial: ${faltantes.join("; ")}`,
           });
@@ -160,7 +175,8 @@ async function ciclo() {
             confianca: t.confianca, injecao: t.alerta_injecao, urgencia: t.urgencia, addr, parsed,
           });
           if (bloqueio) {
-            await supabase.from("historico").insert({
+            await supabase.from("dj_historico").insert({
+    empresa_cliente_id: EMPRESA,
               demanda_id: nova.id, evento: "resposta_automatica_bloqueada", detalhe: bloqueio,
             });
           } else {
@@ -178,12 +194,14 @@ async function ciclo() {
                 resposta_automatica_enviada: true, resposta_enviada_em: new Date().toISOString(),
               };
               if (modelo.encerra_demanda) patch.status = "respondida";
-              await supabase.from("demandas").update(patch).eq("id", nova.id);
-              await supabase.from("historico").insert({
+              await supabase.from("dj_demandas").update(patch).eq("id", nova.id);
+              await supabase.from("dj_historico").insert({
+    empresa_cliente_id: EMPRESA,
                 demanda_id: nova.id, evento: "resposta_automatica", detalhe: `Modelo: ${modelo.titulo}`,
               });
             } catch (e) {
-              await supabase.from("historico").insert({
+              await supabase.from("dj_historico").insert({
+    empresa_cliente_id: EMPRESA,
                 demanda_id: nova.id, evento: "falha_resposta_automatica", detalhe: String(e).slice(0, 300),
               });
             }

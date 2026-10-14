@@ -49,7 +49,7 @@ create table if not exists historico (
 );
 
 create or replace function set_atualizado_em() returns trigger as $$
-begin new.atualizado_em = now(); return new; end; $$ language plpgsql set search_path = '';
+begin new.atualizado_em = now(); return new; end; $$ language plpgsql;
 
 drop trigger if exists trg_demandas_upd on demandas;
 create trigger trg_demandas_upd before update on demandas

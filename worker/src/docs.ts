@@ -1,4 +1,4 @@
-import { supabase, DOCS_ON, DOCS_REMINDER_DAYS, DOCS_MAX_REMINDERS } from "./config.js";
+import { supabase, EMPRESA, DOCS_ON, DOCS_REMINDER_DAYS, DOCS_MAX_REMINDERS } from "./config.js";
 import { enviarResposta } from "./mailer.js";
 import { dentroDoHorario, limiteExcedido, montarTexto, limpa, reSubject, refOk, nomeDe } from "./regras.js";
 
@@ -6,8 +6,9 @@ type ModeloTexto = { titulo: string; corpo: string };
 
 async function modelo(finalidade: string): Promise<ModeloTexto | null> {
   const { data } = await supabase
-    .from("respostas_modelo")
+    .from("dj_respostas_modelo")
     .select("titulo,corpo")
+    .eq("empresa_cliente_id", EMPRESA)
     .eq("finalidade", finalidade)
     .eq("ativo", true)
     .eq("auto_enviar", true)
@@ -28,7 +29,7 @@ export async function rotinaDocumentos() {
   // 1) primeiro pedido de documentos
   if (pedido) {
     const { data: pendentes } = await supabase
-      .from("demandas").select("*")
+      .from("dj_demandas").select("*").eq("empresa_cliente_id", EMPRESA)
       .eq("docs_status", "pendente_envio").eq("alerta_injecao", false).limit(20);
 
     for (const d of pendentes ?? []) {
@@ -46,18 +47,20 @@ export async function rotinaDocumentos() {
           inReplyTo: ref, references: ref ? [ref] : undefined,
         });
         const agora = new Date().toISOString();
-        await supabase.from("demandas").update({
+        await supabase.from("dj_demandas").update({
           docs_status: "solicitado", docs_solicitados_em: agora, docs_ultimo_contato_em: agora,
           docs_lembretes: 0, docs_solicitacao_message_id: mid, status: "aguardando_terceiro",
           resposta_automatica_enviada: true, resposta_enviada_em: agora,
         }).eq("id", d.id);
-        await supabase.from("historico").insert({
+        await supabase.from("dj_historico").insert({
+          empresa_cliente_id: EMPRESA,
           demanda_id: d.id, evento: "solicitacao_documentos", detalhe: d.docs_faltantes.join("; "),
         });
         console.log(`  docs solicitados: ${d.assunto}`);
       } catch (e) {
         console.error("  falha ao solicitar documentos:", e);
-        await supabase.from("historico").insert({
+        await supabase.from("dj_historico").insert({
+          empresa_cliente_id: EMPRESA,
           demanda_id: d.id, evento: "falha_solicitacao_documentos", detalhe: String(e).slice(0, 300),
         });
       }
@@ -68,15 +71,16 @@ export async function rotinaDocumentos() {
   if (lembrete) {
     const limite = new Date(Date.now() - DOCS_REMINDER_DAYS * 864e5).toISOString();
     const { data: vencidas } = await supabase
-      .from("demandas").select("*")
+      .from("dj_demandas").select("*").eq("empresa_cliente_id", EMPRESA)
       .eq("docs_status", "solicitado").lte("docs_ultimo_contato_em", limite).limit(20);
 
     for (const d of vencidas ?? []) {
       try {
         if (d.docs_lembretes >= DOCS_MAX_REMINDERS) {
-          await supabase.from("demandas")
+          await supabase.from("dj_demandas")
             .update({ docs_status: "sem_retorno", triagem_revisada: false }).eq("id", d.id);
-          await supabase.from("historico").insert({
+          await supabase.from("dj_historico").insert({
+          empresa_cliente_id: EMPRESA,
             demanda_id: d.id, evento: "sem_retorno_documentos",
             detalhe: `Sem resposta apos ${d.docs_lembretes} lembrete(s). Requer contato humano.`,
           });
@@ -92,10 +96,11 @@ export async function rotinaDocumentos() {
           to: d.remetente_email, subject: reSubject(limpa(d.assunto)), text: texto,
           inReplyTo: refs[refs.length - 1], references: refs,
         });
-        await supabase.from("demandas").update({
+        await supabase.from("dj_demandas").update({
           docs_lembretes: d.docs_lembretes + 1, docs_ultimo_contato_em: new Date().toISOString(),
         }).eq("id", d.id);
-        await supabase.from("historico").insert({
+        await supabase.from("dj_historico").insert({
+          empresa_cliente_id: EMPRESA,
           demanda_id: d.id, evento: "lembrete_documentos", detalhe: `Lembrete ${d.docs_lembretes + 1}`,
         });
       } catch (e) {
