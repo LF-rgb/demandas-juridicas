@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demandas Jurídicas</title>
+<style>
+  :root{--bg:#f6f7f9;--card:#fff;--tx:#1b1f24;--mut:#667085;--bd:#e4e7ec;--pri:#1d4ed8;
+    --crit:#b42318;--alta:#c2410c;--media:#a16207;--baixa:#2f6f3e}
+  @media (prefers-color-scheme:dark){:root{--bg:#0f1318;--card:#171c23;--tx:#e8ebef;--mut:#9aa4b2;--bd:#262d37;--pri:#6b9bff;
+    --crit:#ff8a7a;--alta:#ffa766;--media:#e8c15b;--baixa:#7bd08f}}
+  *{box-sizing:border-box} body{margin:0;font:14px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--tx)}
+  header{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:14px 20px;background:var(--card);border-bottom:1px solid var(--bd)}
+  h1{font-size:17px;margin:0} main{max-width:1180px;margin:0 auto;padding:16px}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+  .stat{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px 14px}
+  .stat b{display:block;font-size:22px}.stat span{color:var(--mut);font-size:12px}
+  .filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+  select,input,textarea,button{font:inherit;color:inherit;background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:7px 10px}
+  button{cursor:pointer} button.pri{background:var(--pri);border-color:var(--pri);color:#fff}
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--bd);border-radius:10px;overflow:hidden}
+  th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--bd);vertical-align:top}
+  th{font-size:12px;color:var(--mut);font-weight:600} tr.row{cursor:pointer} tr.row:hover{background:var(--bg)}
+  .tag{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;border:1px solid currentColor}
+  .critica{color:var(--crit)}.alta{color:var(--alta)}.media{color:var(--media)}.baixa{color:var(--baixa)}
+  .warn{color:var(--crit);font-weight:600}
+  .muted{color:var(--mut)}
+  #detail{position:fixed;inset:0 0 0 auto;width:min(640px,100%);background:var(--card);border-left:1px solid var(--bd);padding:18px;overflow:auto;transform:translateX(100%);transition:.2s;z-index:5}
+  #detail.open{transform:none} #detail h2{margin:0 0 6px;font-size:16px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+  label{display:block;font-size:12px;color:var(--mut);margin-bottom:3px}
+  .full{grid-column:1/-1} textarea{width:100%;min-height:170px}
+  pre{white-space:pre-wrap;background:var(--bg);padding:10px;border-radius:8px;max-height:220px;overflow:auto}
+  .banner{background:color-mix(in srgb,var(--crit) 12%,transparent);border:1px solid var(--crit);padding:10px;border-radius:8px;margin:10px 0}
+  #login{max-width:340px;margin:12vh auto;background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:22px}
+  #login input{width:100%;margin:6px 0}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+<div id="login">
+  <h1>Demandas Jurídicas</h1>
+  <p class="muted">Acesso restrito à equipe.</p>
+  <input id="em" type="email" placeholder="E-mail" autocomplete="username">
+  <input id="pw" type="password" placeholder="Senha" autocomplete="current-password">
+  <button class="pri" id="btnLogin" style="width:100%">Entrar</button>
+  <p id="loginErr" class="warn"></p>
+</div>
+
+<div id="app" class="hidden">
+  <header><h1>Demandas Jurídicas</h1><div><span id="who" class="muted"></span> <button id="btnOut">Sair</button></div></header>
+  <main>
+    <div class="stats" id="stats"></div>
+    <div class="filters">
+      <select id="fStatus"><option value="">Todos os status</option><option value="nova">Nova</option><option value="em_analise">Em análise</option><option value="aguardando_terceiro">Aguardando terceiro</option><option value="respondida">Respondida</option><option value="arquivada">Arquivada</option></select>
+      <select id="fUrg"><option value="">Toda urgência</option><option value="critica">Crítica</option><option value="alta">Alta</option><option value="media">Média</option><option value="baixa">Baixa</option></select>
+      <select id="fResp"><option value="">Todos os responsáveis</option></select>
+      <input id="fBusca" placeholder="Buscar no assunto ou remetente">
+      <label style="display:flex;align-items:center;gap:6px;margin:0"><input type="checkbox" id="fRev"> só pendentes de revisão</label>
+    </div>
+    <table><thead><tr><th>Prazo</th><th>Urgência</th><th>Assunto</th><th>Área</th><th>Responsável</th><th>Status</th></tr></thead><tbody id="rows"></tbody></table>
+  </main>
+</div>
+
+<aside id="detail"></aside>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script>
+const { SUPABASE_URL, SUPABASE_ANON_KEY } = window.APP_CONFIG;
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+const STATUS = { nova:"Nova", em_analise:"Em análise", aguardando_terceiro:"Aguardando terceiro", respondida:"Respondida", arquivada:"Arquivada" };
+const URG = { critica:"Crítica", alta:"Alta", media:"Média", baixa:"Baixa" };
+let demandas = [], membros = [];
+
+function diasAte(d){ if(!d) return null; const h=new Date(); h.setHours(0,0,0,0); return Math.round((new Date(d+"T00:00:00")-h)/864e5); }
+function fmtPrazo(d){
+  if(!d) return '<span class="muted">sem prazo</span>';
+  const n = diasAte(d); const br = d.split("-").reverse().join("/");
+  const cls = n<0 ? "critica" : n<=2 ? "critica" : n<=7 ? "alta" : "";
+  const nota = n<0 ? `vencido há ${-n}d` : n===0 ? "hoje" : `em ${n}d`;
+  return `<span class="${cls}">${br}</span><br><span class="muted">${nota}</span>`;
+}
+
+async function boot(){
+  const { data:{ session } } = await sb.auth.getSession();
+  if(!session){ $("login").classList.remove("hidden"); $("app").classList.add("hidden"); return; }
+  $("login").classList.add("hidden"); $("app").classList.remove("hidden");
+  $("who").textContent = session.user.email;
+  const m = await sb.from("membros").select("*").eq("ativo", true).order("nome");
+  membros = m.data ?? [];
+  $("fResp").innerHTML = '<option value="">Todos os responsáveis</option>' + membros.map(x=>`<option value="${x.id}">${esc(x.nome)}</option>`).join("");
+  await carregar();
+  sb.channel("demandas").on("postgres_changes",{event:"*",schema:"public",table:"demandas"},carregar).subscribe();
+}
+
+async function carregar(){
+  const { data, error } = await sb.from("demandas").select("*").order("prazo_fatal",{ascending:true,nullsFirst:false}).order("recebido_em",{ascending:false});
+  if(error){ alert("Erro ao carregar: "+error.message); return; }
+  demandas = data; render();
+}
+
+function render(){
+  const abertas = demandas.filter(d=>!["respondida","arquivada"].includes(d.status));
+  const venc = abertas.filter(d=>d.prazo_fatal && diasAte(d.prazo_fatal)<=2).length;
+  $("stats").innerHTML = [
+    ["Abertas", abertas.length],["Prazo em até 2 dias", venc],
+    ["Críticas", abertas.filter(d=>d.urgencia==="critica").length],
+    ["Pendentes de revisão", demandas.filter(d=>!d.triagem_revisada && d.status!=="arquivada").length],
+    ["Alertas de segurança", demandas.filter(d=>d.alerta_injecao && !d.triagem_revisada).length],
+  ].map(([l,v])=>`<div class="stat"><b>${v}</b><span>${l}</span></div>`).join("");
+
+  const fs=$("fStatus").value, fu=$("fUrg").value, fr=$("fResp").value, fb=$("fBusca").value.toLowerCase(), rv=$("fRev").checked;
+  const lista = demandas.filter(d =>
+    (!fs||d.status===fs)&&(!fu||d.urgencia===fu)&&(!fr||d.responsavel_id===fr)&&
+    (!rv||!d.triagem_revisada)&&(!fb||(d.assunto+" "+d.remetente).toLowerCase().includes(fb)));
+  const nome = id => membros.find(m=>m.id===id)?.nome ?? '<span class="muted">não atribuído</span>';
+  $("rows").innerHTML = lista.map(d=>`
+    <tr class="row" onclick="abrir('${d.id}')">
+      <td>${fmtPrazo(d.prazo_fatal)}</td>
+      <td><span class="tag ${d.urgencia}">${URG[d.urgencia]??"-"}</span></td>
+      <td>${d.alerta_injecao?'<span class="warn">⚠ </span>':""}${esc(d.assunto)}<br><span class="muted">${esc(d.remetente)}</span></td>
+      <td>${esc(d.area??"-")}<br><span class="muted">${esc(d.tipo??"")}</span></td>
+      <td>${nome(d.responsavel_id)}</td>
+      <td>${STATUS[d.status]}${d.resposta_automatica_enviada?'<br><span class="muted">resposta automática enviada</span>':""}${d.triagem_revisada?"":'<br><span class="muted">revisar triagem</span>'}</td>
+    </tr>`).join("") || '<tr><td colspan="6" class="muted">Nenhuma demanda.</td></tr>';
+}
+
+async function abrir(id){
+  const d = demandas.find(x=>x.id===id); if(!d) return;
+  const h = await sb.from("historico").select("*").eq("demanda_id",id).order("criado_em",{ascending:false});
+  $("detail").innerHTML = `
+    <button onclick="fechar()" style="float:right">Fechar</button>
+    <h2>${esc(d.assunto)}</h2>
+    <div class="muted">${esc(d.remetente)} · ${new Date(d.recebido_em).toLocaleString("pt-BR")}</div>
+    ${d.alerta_injecao?`<div class="banner"><b>Alerta de segurança:</b> este e-mail contém instruções dirigidas à IA. A triagem ignorou esse conteúdo, mas revise com atenção.<br>${esc(d.alerta_detalhe??"")}</div>`:""}
+    <p>${esc(d.resumo??"")}</p>
+    <div class="grid">
+      <div><label>Status</label><select id="eStatus">${Object.entries(STATUS).map(([k,v])=>`<option value="${k}" ${d.status===k?"selected":""}>${v}</option>`).join("")}</select></div>
+      <div><label>Responsável</label><select id="eResp"><option value="">Não atribuído</option>${membros.map(m=>`<option value="${m.id}" ${d.responsavel_id===m.id?"selected":""}>${esc(m.nome)}</option>`).join("")}</select></div>
+      <div><label>Urgência</label><select id="eUrg">${Object.entries(URG).map(([k,v])=>`<option value="${k}" ${d.urgencia===k?"selected":""}>${v}</option>`).join("")}</select></div>
+      <div><label>Prazo fatal</label><input type="date" id="ePrazo" value="${d.prazo_fatal??""}"></div>
+      <div class="full muted">Prazo (origem): ${esc(d.prazo_origem??"não identificado")}<br>Atribuição: ${esc(d.justificativa_atribuicao??"")}<br>Confiança da IA: ${d.confianca!=null?Math.round(d.confianca*100)+"%":"-"}${(d.docs_faltantes??[]).length?`<br>Documentos faltantes (pelo texto e nomes dos anexos): ${esc(d.docs_faltantes.join("; "))} [${esc(d.docs_status??"")}]`:""}</div>
+      <div class="full"><label>Rascunho de resposta (editável)</label><textarea id="eRasc">${esc(d.rascunho_resposta??"")}</textarea></div>
+      <div class="full"><button onclick="copiar()">Copiar rascunho</button></div>
+    </div>
+    <label>E-mail original</label><pre>${esc(d.corpo)}</pre>
+    <p><button class="pri" onclick="salvar('${d.id}')">Salvar e marcar triagem como revisada</button></p>
+    <label>Histórico</label>
+    <ul class="muted">${(h.data??[]).map(x=>`<li>${new Date(x.criado_em).toLocaleString("pt-BR")}: ${esc(x.evento)} ${esc(x.detalhe??"")}</li>`).join("")}</ul>`;
+  $("detail").classList.add("open");
+}
+function fechar(){ $("detail").classList.remove("open"); }
+function copiar(){ navigator.clipboard.writeText($("eRasc").value); }
+
+async function salvar(id){
+  const patch = {
+    status: $("eStatus").value, responsavel_id: $("eResp").value || null,
+    urgencia: $("eUrg").value, prazo_fatal: $("ePrazo").value || null,
+    rascunho_resposta: $("eRasc").value, triagem_revisada: true,
+  };
+  const { error } = await sb.from("demandas").update(patch).eq("id", id);
+  if(error){ alert("Erro ao salvar: "+error.message); return; }
+  await sb.from("historico").insert({ demanda_id:id, evento:"edicao_manual", detalhe:`Status: ${patch.status}` });
+  fechar(); carregar();
+}
+
+$("btnLogin").onclick = async () => {
+  const { error } = await sb.auth.signInWithPassword({ email:$("em").value, password:$("pw").value });
+  if(error){ $("loginErr").textContent = "Credenciais inválidas."; return; }
+  boot();
+};
+$("btnOut").onclick = async () => { await sb.auth.signOut(); boot(); };
+["fStatus","fUrg","fResp","fRev"].forEach(i=>$(i).onchange=render);
+$("fBusca").oninput = render;
+boot();
+</script>
+</body>
+</html>
