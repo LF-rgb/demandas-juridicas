@@ -24,6 +24,7 @@ jobs:
       - run: npm ci
       - run: npm run testes
         env:
+          QTD: "1"
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           EMPRESA_CLIENTE_ID: ${{ secrets.EMPRESA_CLIENTE_ID }}
