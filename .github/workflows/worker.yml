@@ -3,7 +3,7 @@ name: Worker de demandas
 on:
   schedule:
     # A cada 10 min, seg a sex, 08h as 19h (Brasilia = UTC-3)
-    - cron: "*/10 11-21 * * 1-5"
+    - cron: "3,13,23,33,43,53 11-21 * * 1-5"
   workflow_dispatch: {}
 
 concurrency:
