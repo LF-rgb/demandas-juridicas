@@ -1,10 +1,16 @@
 name: Worker de demandas
 
+# Um unico job fica rodando em laco: verifica a caixa a cada 10 minutos (seg a sex, 08h as 19h de Brasilia).
+# Ao chegar perto do limite de 6h do GitHub, ele mesmo dispara a proxima execucao. O cron abaixo so
+# serve para iniciar o dia e como reserva. "Run workflow" tambem inicia manualmente.
 on:
   schedule:
-    # A cada 10 min, seg a sex, 08h as 19h (Brasilia = UTC-3)
-    - cron: "3,13,23,33,43,53 11-21 * * 1-5"
+    - cron: "3 11-21 * * 1-5"
   workflow_dispatch: {}
+
+permissions:
+  contents: read
+  actions: write
 
 concurrency:
   group: worker-demandas
@@ -13,10 +19,15 @@ concurrency:
 jobs:
   processar:
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 355
     defaults:
       run:
         working-directory: worker
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      EMPRESA_CLIENTE_ID: ${{ secrets.EMPRESA_CLIENTE_ID }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -25,8 +36,19 @@ jobs:
           cache: npm
           cache-dependency-path: worker/package-lock.json
       - run: npm ci
-      - run: npm run once
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          EMPRESA_CLIENTE_ID: ${{ secrets.EMPRESA_CLIENTE_ID }}
+      - name: Laco a cada 10 minutos
+        shell: bash
+        run: |
+          export TZ=America/Sao_Paulo
+          dentro() { d=$(date +%u); h=$((10#$(date +%H))); [ "$d" -le 5 ] && [ "$h" -ge 8 ] && [ "$h" -lt 19 ]; }
+          # execucao manual fora do horario faz uma passada so
+          if ! dentro; then echo "Fora do horario: uma passada unica."; npm run once || true; exit 0; fi
+          fim=$(( $(date +%s) + 335*60 ))
+          while dentro && [ "$(date +%s)" -lt "$fim" ]; do
+            npm run once || echo "Passada falhou, tenta de novo na proxima."
+            sleep 600
+          done
+          if dentro; then
+            echo "Renovando: disparando a proxima execucao."
+            gh workflow run worker.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" || true
+          fi
