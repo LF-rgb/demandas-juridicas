@@ -159,7 +159,9 @@ async function ciclo() {
           evento: "triagem_ia",
           detalhe: t.alerta_injecao
             ? `ALERTA: possivel injecao de prompt no e-mail. ${t.alerta_detalhe ?? ""}`
-            : `Triagem automatica (confianca ${t.confianca}). IA analisou texto e nomes dos anexos, nao o conteudo.`,
+            : `Triagem automatica (confianca ${t.confianca}). IA analisou texto e nomes dos anexos, nao o conteudo.` +
+              (t.palavras.length ? ` Palavras-chave: ${t.palavras.join(", ")}.` : "") +
+              (t.urgenciaElevada ? ` Urgencia elevada para ${t.urgencia} por regra de palavra-chave.` : ""),
         });
         if (podePedirDocs) {
           await supabase.from("dj_historico").insert({
