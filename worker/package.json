@@ -6,6 +6,7 @@
   "engines": { "node": ">=22" },
   "scripts": {
     "start": "tsx src/main.ts",
+    "testes": "tsx src/enviar-testes.ts",
     "once": "tsx src/main.ts --once",
     "typecheck": "tsc --noEmit"
   },
