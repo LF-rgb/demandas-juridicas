@@ -5,8 +5,8 @@
   "type": "module",
   "engines": { "node": ">=22" },
   "scripts": {
-    "start": "tsx src/index.ts",
-    "once": "tsx src/index.ts --once",
+    "start": "tsx src/main.ts",
+    "once": "tsx src/main.ts --once",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

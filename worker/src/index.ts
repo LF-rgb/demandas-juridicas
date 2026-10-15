@@ -1,4 +1,3 @@
-import "./bootstrap.js";
 import { ImapFlow } from "imapflow";
 import { simpleParser, type ParsedMail } from "mailparser";
 import { env, supabase, EMPRESA, MODEL, MAX_BODY, PROCESSED, AUTO_ON, DOCS_ON, MIN_CONF } from "./config.js";
