@@ -55,6 +55,9 @@ const GRUPOS: Grupo[] = [
     "desmatamento", "embargo ambiental", "fornecedor irregular", "auditoria externa", "codigo de conduta",
   ]},
   { piso: "alta", area: "concorrencial", termos: ["cade", "cartel", "infracao a ordem economica", "concorrencia desleal"] },
+  { piso: "media", area: "auditoria", termos: [
+    "auditoria", "auditor", "prestacao de contas", "reembolso", "divergencia de caixa", "conferencia de nota", "inconsistencia contabil", "relatorio de auditoria",
+  ]},
   { piso: "media", area: "contratos", termos: [
     "contrato", "aditivo", "distrato", "rescisao contratual", "minuta", "clausula", "revisao contratual", "renovacao de contrato",
     "termo de confidencialidade", "nda", "procuracao", "acordo", "memorando de entendimento", "carta proposta",
