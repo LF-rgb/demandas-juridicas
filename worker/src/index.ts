@@ -80,6 +80,22 @@ async function registrarRetorno(pai: { id: string; docs_status: string | null },
   await supabase.from("dj_demandas").update(patch).eq("id", pai.id);
 }
 
+// Atribuicao deterministica por area: quem tem a area atende; havendo mais de um (ex.: Lennon e Dany no juridico),
+// escolhe quem tem menos demandas abertas. Sem candidato, vale a sugestao da IA.
+const AREA_PARA_ESPEC: Record<string, string> = { auditoria: "auditoria", compliance: "compliance" };
+async function escolherResponsavel(area: string, membros: Membro[], sugestao?: Membro | null): Promise<Membro | null> {
+  const chave = AREA_PARA_ESPEC[area] ?? area;
+  const candidatos = membros.filter((m) => m.areas.includes(chave));
+  if (candidatos.length === 0) return sugestao ?? null;
+  if (candidatos.length === 1) return candidatos[0];
+  const { data } = await supabase.from("dj_demandas").select("responsavel_id")
+    .eq("empresa_cliente_id", EMPRESA).in("responsavel_id", candidatos.map((c) => c.id))
+    .not("status", "in", "(respondida,arquivada)");
+  const carga = new Map<string, number>(candidatos.map((c) => [c.id, 0]));
+  for (const r of data ?? []) carga.set(r.responsavel_id as string, (carga.get(r.responsavel_id as string) ?? 0) + 1);
+  return [...candidatos].sort((a, b) => (carga.get(a.id)! - carga.get(b.id)!) || a.nome.localeCompare(b.nome))[0];
+}
+
 async function ciclo() {
   const [membros, modelos, checklist] = await Promise.all([
     carregarMembros(), carregarModelos(), carregarChecklist(),
@@ -122,7 +138,8 @@ async function ciclo() {
         const anexos = (parsed.attachments ?? []).map((a) => a.filename).filter((x): x is string => !!x);
 
         const t = await triar({ remetente, assunto, corpo, recebidoEm, anexos }, membros, modelos, checklist, MODEL);
-        const resp = membros.find((m) => m.email.toLowerCase() === (t.responsavel_email ?? "").toLowerCase());
+        const sugerido = membros.find((m) => m.email.toLowerCase() === (t.responsavel_email ?? "").toLowerCase());
+        const resp = await escolherResponsavel(t.area, membros, sugerido);
         const modelo = modelos.find((m) => m.id === t.modelo_id) ?? null;
         // so aceita ids que existem no checklist; o texto pedido vem do checklist, nao da IA
         const faltantes = t.docs_faltantes
