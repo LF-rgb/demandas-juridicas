@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { analisarPalavras, maiorUrgencia } from "./palavras.js";
+import { TERMOS_AUDITORIA, analisarPalavras, maiorUrgencia } from "./palavras.js";
 
 export const Triagem = z.object({
   area: z.string(),
@@ -252,6 +252,11 @@ ${neutraliza(email.corpo)}
   } else bruto = await chamarGemini(model, user);
   const t = Triagem.parse(bruto);
   const urgencia = maiorUrgencia(t.urgencia, pistas.piso);
+  // Auditoria interna e deterministica: se aparecer termo de auditoria e a IA nao classificou como area contenciosa, vai para auditoria.
+  if (pistas.achadas.some((x) => TERMOS_AUDITORIA.includes(x)) &&
+      ["compliance", "administrativo", "outros", "nao_juridico"].includes(t.area)) {
+    t.area = "auditoria";
+  }
   // Prazo explicito do e-mail sempre prevalece; sem ele (ou se for anterior ao recebimento), define pelo grau de importancia.
   const recebidoYmd = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(email.recebidoEm);
   const explicitoValido = !!t.prazo_fatal && /^\d{4}-\d{2}-\d{2}$/.test(t.prazo_fatal) && t.prazo_fatal >= recebidoYmd;

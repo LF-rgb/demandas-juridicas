@@ -46,7 +46,7 @@ const GRUPOS: Grupo[] = [
     "cgu", "tcu", "pad ", "due diligence", "lista suja", "trabalho escravo", "desmatamento", "embargo ambiental", "fornecedor irregular", ]},
   { piso: "alta", area: "concorrencial", termos: ["cade", "cartel", "infracao a ordem economica", "concorrencia desleal"] },
   { piso: "media", area: "auditoria", termos: [
-    "auditoria", "auditor", "prestacao de contas", "reembolso", "divergencia de caixa", "conferencia de nota", "inconsistencia contabil", "relatorio de auditoria",
+    "auditoria", "auditoria interna", "controle interno", "controles internos", "evidencias de controle", "auditor", "prestacao de contas", "reembolso", "divergencia de caixa", "conferencia de nota", "inconsistencia contabil", "relatorio de auditoria",
   ]},
   { piso: "media", area: "contratos", termos: [
     "contrato", "aditivo", "distrato", "rescisao contratual", "minuta", "clausula", "revisao contratual", "renovacao de contrato",
@@ -104,3 +104,6 @@ export function analisarPalavras(texto: string): { piso: Urgencia; areas: string
 
 export const maiorUrgencia = (a: Urgencia, b: Urgencia): Urgencia =>
   ORDEM.indexOf(a) >= ORDEM.indexOf(b) ? a : b;
+
+// Termos que, sozinhos, indicam auditoria interna (vai para quem tem a area "auditoria").
+export const TERMOS_AUDITORIA = ["auditoria interna", "controle interno", "controles internos", "evidencias de controle", "relatorio de auditoria", "reembolso", "prestacao de contas", "divergencia de caixa", "conferencia de nota", "inconsistencia contabil"];
