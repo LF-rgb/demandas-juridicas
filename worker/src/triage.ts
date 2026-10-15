@@ -204,6 +204,16 @@ export function somarDiasUteis(inicio: Date, dias: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+// Prazo que cai em sabado ou domingo e antecipado para a sexta anterior (nunca para antes do recebimento).
+export function anteciparFimDeSemana(ymd: string, minimo: string): { data: string; ajustado: boolean } {
+  const d = new Date(`${ymd}T12:00:00Z`);
+  const w = d.getUTCDay();
+  if (w !== 0 && w !== 6) return { data: ymd, ajustado: false };
+  d.setUTCDate(d.getUTCDate() - (w === 6 ? 1 : 2));
+  const sexta = d.toISOString().slice(0, 10);
+  return sexta < minimo ? { data: ymd, ajustado: false } : { data: sexta, ajustado: true };
+}
+
 export async function triar(
   email: { remetente: string; assunto: string; corpo: string; recebidoEm: Date; anexos: string[] },
   membros: Membro[],
@@ -264,6 +274,13 @@ ${neutraliza(email.corpo)}
     const dias = SLA_DIAS_UTEIS[urgencia] ?? 7;
     t.prazo_fatal = somarDiasUteis(email.recebidoEm, dias);
     t.prazo_origem = `Prazo interno sugerido: ${dias} dia(s) util(eis) pela urgencia ${urgencia} (o e-mail nao informou prazo)`;
+  }
+  if (t.prazo_fatal) {
+    const aj = anteciparFimDeSemana(t.prazo_fatal, recebidoYmd);
+    if (aj.ajustado) {
+      t.prazo_origem = `${t.prazo_origem ?? "Prazo"} (antecipado para sexta, pois ${t.prazo_fatal.split("-").reverse().join("/")} cai no fim de semana)`;
+      t.prazo_fatal = aj.data;
+    }
   }
   return { ...t, urgencia, palavras: pistas.achadas, urgenciaElevada: urgencia !== t.urgencia };
 }
