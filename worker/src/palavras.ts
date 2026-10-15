@@ -79,6 +79,18 @@ const GRUPOS: Grupo[] = [
 const norm = (s: string) =>
   ` ${s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ")} `;
 
+const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// Palavra inteira (com plural simples): "cisao" nao casa dentro de "decisao".
+const REGEX = new Map<string, RegExp>();
+function casa(texto: string, termo: string): boolean {
+  let r = REGEX.get(termo);
+  if (!r) {
+    r = new RegExp(`(^|[^a-z0-9])${esc(termo.trim())}s?([^a-z0-9]|$)`);
+    REGEX.set(termo, r);
+  }
+  return r.test(texto);
+}
+
 export function analisarPalavras(texto: string): { piso: Urgencia; areas: string[]; achadas: string[] } {
   const t = norm(texto);
   let piso: Urgencia = "baixa";
@@ -86,8 +98,7 @@ export function analisarPalavras(texto: string): { piso: Urgencia; areas: string
   const achadas: string[] = [];
   for (const g of GRUPOS) {
     for (const termo of g.termos) {
-      const termoN = termo.endsWith(" ") ? ` ${termo.trim()} ` : termo.length <= 4 ? ` ${termo} ` : termo;
-      if (t.includes(termoN)) {
+      if (casa(t, termo)) {
         achadas.push(termo.trim());
         if (g.area) areas.add(g.area);
         if (ORDEM.indexOf(g.piso) > ORDEM.indexOf(piso)) piso = g.piso;
