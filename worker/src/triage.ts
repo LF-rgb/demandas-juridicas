@@ -100,7 +100,16 @@ async function chamarGemini(model: string, user: string): Promise<unknown> {
   });
   let ultimo = "";
   for (let tentativa = 0; tentativa < 3; tentativa++) {
-    const r = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-goog-api-key": key }, body: corpo });
+    const t0 = Date.now();
+    let r: Response;
+    try {
+      r = await fetch(url, { method: "POST", headers: { "content-type": "application/json", "x-goog-api-key": key }, body: corpo, signal: AbortSignal.timeout(60_000) });
+    } catch (e) {
+      ultimo = `sem resposta em 60s (${(e as Error).name})`;
+      console.warn(`  Gemini: ${ultimo}, tentativa ${tentativa + 1}/3`);
+      continue;
+    }
+    console.log(`  Gemini ${model}: HTTP ${r.status} em ${((Date.now() - t0) / 1000).toFixed(1)}s`);
     if (r.status === 429 || r.status >= 500) {
       ultimo = `HTTP ${r.status}`;
       await new Promise((ok) => setTimeout(ok, 2000 * (tentativa + 1)));
