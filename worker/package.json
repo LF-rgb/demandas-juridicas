@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "engines": { "node": ">=22" },
   "scripts": {
     "start": "tsx src/index.ts",
     "once": "tsx src/index.ts --once",
