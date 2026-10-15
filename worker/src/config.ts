@@ -15,7 +15,7 @@ export const supabase = createClient(env("SUPABASE_URL"), env("SUPABASE_SERVICE_
   auth: { persistSession: false },
 });
 
-export const MODEL = env("GEMINI_MODEL", "gemini-2.5-flash");
+export const MODEL = env("GEMINI_MODEL", "gemini-3.8-flash");
 export const MAX_BODY = num("MAX_BODY_CHARS", 20000);
 export const PROCESSED = process.env.ZIMBRA_PROCESSED_FOLDER ?? "";
 
