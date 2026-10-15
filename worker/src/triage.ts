@@ -84,6 +84,60 @@ const SCHEMA = {
   ],
 };
 
+// Converte o esquema (estilo Gemini) para JSON Schema comum, usado pela Anthropic.
+function paraJsonSchema(n: any): any {
+  if (Array.isArray(n)) return n.map(paraJsonSchema);
+  if (n && typeof n === "object") {
+    const o: any = {};
+    for (const [k, v] of Object.entries(n)) if (k !== "nullable") o[k] = paraJsonSchema(v);
+    if (typeof o.type === "string") o.type = o.type.toLowerCase();
+    if (n.nullable) o.type = [o.type, "null"];
+    return o;
+  }
+  return n;
+}
+
+async function chamarClaude(model: string, user: string): Promise<unknown> {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) throw new Error("ANTHROPIC_API_KEY nao definida (preencha em Configuracao > Conexao)");
+  const corpo = JSON.stringify({
+    model,
+    max_tokens: 4000,
+    system: SYSTEM,
+    tools: [{ name: "registrar_triagem", description: "Registra a triagem estruturada de uma demanda juridica recebida por e-mail.", input_schema: paraJsonSchema(SCHEMA) }],
+    tool_choice: { type: "tool", name: "registrar_triagem" },
+    messages: [{ role: "user", content: user }],
+  });
+  let ultimo = "";
+  for (let tentativa = 0; tentativa < 3; tentativa++) {
+    const t0 = Date.now();
+    let r: Response;
+    try {
+      r = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
+        body: corpo, signal: AbortSignal.timeout(60_000),
+      });
+    } catch (e) {
+      ultimo = `sem resposta em 60s (${(e as Error).name})`;
+      console.warn(`  Claude: ${ultimo}, tentativa ${tentativa + 1}/3`);
+      continue;
+    }
+    console.log(`  Claude ${model}: HTTP ${r.status} em ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+    if (r.status === 429 || r.status === 529 || r.status >= 500) {
+      ultimo = `HTTP ${r.status}`;
+      await new Promise((ok) => setTimeout(ok, 2000 * (tentativa + 1)));
+      continue;
+    }
+    const j: any = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(`Claude HTTP ${r.status}: ${j?.error?.message ?? "erro"}`);
+    const bloco = j?.content?.find((b: any) => b?.type === "tool_use");
+    if (!bloco) throw new Error("Claude nao retornou triagem");
+    return bloco.input;
+  }
+  throw new Error(`Claude indisponivel: ${ultimo}`);
+}
+
 async function chamarGemini(model: string, user: string): Promise<unknown> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("GEMINI_API_KEY nao definida (preencha em Configuracao > Conexao)");
@@ -166,5 +220,10 @@ ${neutraliza(email.corpo)}
 </corpo>
 </email>`;
 
+  // Provedor: AI_PROVIDER (anthropic ou gemini); se vazio, usa a Claude quando houver chave dela.
+  const prov = (process.env.AI_PROVIDER ?? "").toLowerCase() || (process.env.ANTHROPIC_API_KEY ? "anthropic" : "gemini");
+  if (prov === "anthropic") {
+    return Triagem.parse(await chamarClaude(process.env.ANTHROPIC_MODEL || "claude-sonnet-5-5", user));
+  }
   return Triagem.parse(await chamarGemini(model, user));
 }
