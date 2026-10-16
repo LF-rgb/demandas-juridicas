@@ -96,6 +96,42 @@ async function escolherResponsavel(area: string, membros: Membro[], sugestao?: M
   return [...candidatos].sort((a, b) => (carga.get(a.id)! - carga.get(b.id)!) || a.nome.localeCompare(b.nome))[0];
 }
 
+const MAX_ANEXO_BYTES = 25 * 1024 * 1024;
+const MAX_ANEXOS = 15;
+
+// Guarda os anexos no Storage (bucket privado) para a pessoa abrir pelo site,
+// sem precisar abrir o e-mail. Falha em um anexo nao derruba a demanda.
+async function guardarAnexos(demandaId: string, parsed: Awaited<ReturnType<typeof simpleParser>>) {
+  const lista = (parsed.attachments ?? [])
+    .filter((a) => a.content && a.content.length > 0)
+    .filter((a) => !(a.contentDisposition === "inline" && a.content.length < 100 * 1024)) // assinaturas/logos
+    .slice(0, MAX_ANEXOS);
+  let i = 0;
+  for (const a of lista) {
+    i++;
+    const nome = (a.filename || `anexo-${i}`).replace(/[\r\n]/g, " ").slice(0, 200);
+    if (a.content.length > MAX_ANEXO_BYTES) {
+      console.warn(`anexo "${nome}" ignorado: ${a.content.length} bytes (acima do limite)`);
+      continue;
+    }
+    const seguro = nome.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]+/g, "_");
+    const caminho = `${EMPRESA}/${demandaId}/${i}-${seguro}`;
+    try {
+      const { error: up } = await supabase.storage.from("demandas-anexos").upload(caminho, a.content, {
+        contentType: a.contentType || "application/octet-stream", upsert: true,
+      });
+      if (up) throw up;
+      const { error: ins } = await supabase.from("dj_anexos").insert({
+        empresa_cliente_id: EMPRESA, demanda_id: demandaId, nome,
+        tipo: a.contentType || null, tamanho: a.content.length, caminho,
+      });
+      if (ins) throw ins;
+    } catch (e) {
+      console.error(`falha ao guardar anexo "${nome}":`, e);
+    }
+  }
+}
+
 async function ciclo() {
   const [membros, modelos, checklist] = await Promise.all([
     carregarMembros(), carregarModelos(), carregarChecklist(),
@@ -169,6 +205,8 @@ async function ciclo() {
           triagem_revisada: false, // a IA sugere, uma pessoa confirma
         }).select("id").single();
         if (error) throw error;
+
+        await guardarAnexos(nova.id, parsed);
 
         await supabase.from("dj_historico").insert({
     empresa_cliente_id: EMPRESA,
